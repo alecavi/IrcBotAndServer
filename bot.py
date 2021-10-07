@@ -5,7 +5,8 @@
 
 import socket
 from types import TracebackType
-from typing import Optional, Sequence, Tuple, Type
+from typing import Iterable, Optional, Sequence, Tuple, Type
+import command
 
 
 class Bot:
@@ -14,7 +15,6 @@ class Bot:
     __server_name: Optional[bytes]
     __socket: socket.SocketIO
     __channel: Optional[bytes]
-    __read_buffer: bytes
 
     def __init__(self, name: bytes, port: int, ipv6: bool = True) -> None:
         self.__name = name
@@ -30,7 +30,7 @@ class Bot:
 
     def connect_to_server(self, server: bytes) -> None:
         self.__socket.connect((server, self.__port))
-        message = b"NICK %s \r\nUSER %s 0 * :%s\r\n" % (
+        message = b"NICK %s\r\nUSER %s 0 * :%s\r\n" % (
             self.__name, self.__name, self.__name)
         self.__socket.sendall(message)
 
@@ -46,54 +46,38 @@ class Bot:
         self.__socket.sendall(message_bytes)
 
     def receive_forever(self) -> None:
-        self.__read_buffer = b""
+        buffer = b""
         while True:
             data = self.__socket.recv(2 ** 10)
             print(b"data: %s" % data)
-            self.__read_buffer += data
-            self.__handle_command()
+            buffer += data
+            self.__handle_command(buffer)
 
-    def __handle_command(self) -> None:
-        prefix, command, args = self.__parse_command()
-        self.__command_handler(prefix, command, args)
+    def __handle_command(self, buffer: bytes) -> None:
+        commands = Bot.__parse_command(buffer)
+        for command in commands:
+            self.__command_handler(command)
 
-    def __parse_command(self) -> Tuple[Optional[bytes], bytes, Sequence[bytes]]:
-        lines = self.__read_buffer.split(b"\r\n")
+    @staticmethod
+    def __parse_command(buffer: bytes) -> Iterable[command.Command]:
+        lines = buffer.split(b"\r\n")
         # We'll process all lines but the last, because it may be a partial message the rest of which
-        # is still on its way
-        self.__read_buffer = lines[-1]
+        # is still on its way. Sockets aren's magically aware that we're using them to communicate via the
+        # IRC protocol, so they may split data that conceptually goes together
+        buffer = lines[-1]
         lines = lines[:-1]
-        for line in lines:
-            print(b"line: %s" % line)
-            if not line:  # Empty line
-                continue
+        # Also, there could be empty lines, which the IRC RFC specifies must be ignored
+        return map(lambda line: command.Command(line), filter(lambda line: line, lines))
 
-            prefix: Optional[bytes]
-            if line.startswith(b":"):  # Has a prefix
-                prefix, line = line.split(maxsplit=1)
-            else:
-                prefix = None
-
-            command, args = line.split(maxsplit=1)
-            if args.startswith(b":"):
-                arguments = [args[1:]]
-            else:
-                args_pair = args.split(b" :", 1)
-                arguments = args_pair[0].split()
-                if len(args_pair) == 2:
-                    arguments.append(args_pair[1])
-
-        return prefix, command, arguments
-
-    def __command_handler(self, prefix: Optional[bytes], command: bytes, args: Sequence[bytes]) -> None:
+    def __command_handler(self, command: command.Command) -> None:
         def ping() -> None:
-            if len(args) < 1:
+            if len(command.args) < 1:
                 self.__reply(b"409 %s :No origin specified" % self.__name)
                 return
-            self.__send(b"PONG %s :%s" % (self.__server_name, args[0]))
+            self.__send(b"PONG %s :%s" % (self.__server_name, command.args[0]))
 
         def rpl_myinfo() -> None:
-            client_name, server_name, version, user_modes, channel_modes = args
+            client_name, server_name, version, user_modes, channel_modes = command.args
             print(b"info: %s" % server_name)
             self.__server_name = server_name
 
@@ -103,7 +87,7 @@ class Bot:
         }
 
         try:
-            handlers[command]()
+            handlers[command.command]()
         except KeyError:
             pass  # Ignore unknown commands and replies
 
