@@ -21,6 +21,7 @@ class Command:
     prefix: Optional[bytes]
     command: bytes
     args: Sequence[bytes]
+    _trailing: bool  # used by __str__
 
     def __init__(self, input: bytes) -> None:
         """
@@ -30,6 +31,7 @@ class Command:
         """
         prefix: Optional[bytes]
         if input.startswith(b":"):
+            self._trailing = True
             # There definitely is a first part, which is at least the :
             parts = iter(input.split(maxsplit=1))
 
@@ -52,12 +54,15 @@ class Command:
         try:
             args = next(parts)
             if args.startswith(b":"):
+                self._trailing = True
                 arguments = [args[1:]]
             else:
+                self._trailing = False
                 args_and_trailing = args.split(b" :", 1)
                 arguments = args_and_trailing[0].split()
                 try:
                     arguments.append(args_and_trailing[1])
+                    self._trailing = True
                 except:  # This fails if there aren't trailing arguments, in which case we have nothing to append
                     pass
         except StopIteration:
@@ -66,3 +71,16 @@ class Command:
         self.prefix = prefix
         self.command = command
         self.args = arguments
+
+    def __str__(self) -> str:
+        prefix = f":{self.prefix.decode()}" if self.prefix else ""
+        out = f"{prefix} {self.command.decode()}"
+
+        for arg in self.args[:-1]:
+            out += f" {arg.decode()}"
+        try:
+            last = self.args[-1]
+            out += f" :{last.decode()}" if self._trailing else f" {last.decode()}"
+        except IndexError:
+            pass  # Apparently there were no arguments, so we don't have to worry about stringifying them
+        return out
