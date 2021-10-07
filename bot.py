@@ -10,8 +10,8 @@ import command
 class Bot:
     _port: int
     _name: bytes
-    _server_name: Optional[bytes]
     _socket: socket.SocketIO
+    _server_name: Optional[bytes]
     _channel: Optional[bytes]
     _debug: bool
 
@@ -77,7 +77,6 @@ class Bot:
 
         def rpl_myinfo() -> None:
             client_name, server_name, version, user_modes, channel_modes = command.args
-            print(b"info: %s" % server_name)
             self._server_name = server_name
 
         handlers = {
