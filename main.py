@@ -18,10 +18,12 @@ parser.add_argument(
 parser.add_argument(
     "--channel", help="set the channel that the bot will join", default=DEFAULT_CHANNEL)
 parser.add_argument("--debug", help="enable debug mode", action="store_true")
+parser.add_argument(
+    "--ip-version", help='ip version to use. Defaults to "ipv6"', choices=["ipv4", "ipv6"], default="ipv6")
 
 args = parser.parse_args()
 
-with bot.Bot(args.name.encode(), args.port, ipv6=True, debug=args.debug) as b:
+with bot.Bot(args.name.encode(), args.port, ipv6=args.ip_version == "ipv6", debug=args.debug) as b:
     b.connect_to_server(args.host.encode())
     b.join_channel(args.channel.encode())
     b.send_channel_message(f"Hello, I am {args.name}. Try sending !hello or !slap on the channel, or "

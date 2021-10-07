@@ -25,7 +25,7 @@ class Bot:
 
         if debug:
             print(
-                f"started bot in debug mode: name: {name.decode()}, port: {port}, using" + "ipv6" if ipv6 else "ipv4")
+                f"started bot in debug mode: name: {name.decode()}, port: {port}, using " + "ipv6" if ipv6 else "ipv4")
 
     def __enter__(self) -> "Bot":
         return self
@@ -103,7 +103,7 @@ class Bot:
     def _print_debug(self, message: bytes):
         if self._debug:
             channel = getattr(self, "_channel", b"{not on any channel}")
-            print(f'out: #{channel.decode()}: "{message.decode()}"')
+            print(f"out: #{channel.decode()}: {message.decode()}")
 
     def quit(self, message: str) -> None:
         message = f"QUIT {message}\r\n"
