@@ -1,5 +1,5 @@
 """
-A handful of simple parser combinators to make parsing complex IRC commands more palatable.
+This module contains a handful of simple parser combinators to make parsing complex IRC commands more palatable.
 All the functions in this module return a pair of (parsed, leftover)
 """
 
@@ -11,8 +11,8 @@ class ParseError(Exception):
     pass
 
 
-def word(input: bytes) -> Tuple[bytes, bytes]:
-    "Parse one word, defined as a whitespace-terminated sequence of any character at all"
+def text(input: bytes) -> Tuple[bytes, bytes]:
+    "Parse one sequence of text, defined as a whitespace-terminated sequence of any character at all"
     word_end = input.find(b" ")
     word_end = word_end if word_end >= 0 else len(input)
     return input[:word_end], input[word_end:]

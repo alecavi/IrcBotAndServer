@@ -3,7 +3,7 @@
 
 import socket
 from types import TracebackType
-from typing import Iterable, Optional, Set, Type
+from typing import Dict, Iterable, Optional, Set, Type
 import command
 
 
@@ -20,6 +20,7 @@ class Bot:
         self._name = name
         self._port = port
         self._debug = debug
+        self._users_on_channel = set()
 
         addr_family = socket.AF_INET6 if ipv6 else socket.AF_INET
         self._socket = socket.socket(addr_family)
@@ -92,6 +93,7 @@ class Bot:
         """
         Quit the server and close the socket
         """
+        self._users_on_channel.clear()
         self._send(b"QUIT %r" % message)
         self._socket.close()
 
@@ -118,13 +120,36 @@ class Bot:
                 return
             self._send(b"PONG %s :%s" % (self._server_name, command.args[0]))
 
+        def join() -> None:
+            assert command.prefix is not None
+            nick = command.prefix.nick
+            self._users_on_channel.add(nick)
+            print(self._users_on_channel)
+
+        def part() -> None:
+            assert command.prefix is not None
+            nick = command.prefix.nick
+            self._users_on_channel.remove(nick)
+
+        def quit() -> None:
+            assert command.prefix is not None
+            nick = command.prefix.nick
+            self._users_on_channel.remove(nick)
+
         def rpl_myinfo() -> None:
             client_name, server_name, version, user_modes, channel_modes = command.args
             self._server_name = server_name
 
+        def rpl_whoreply() -> None:
+            _, channel, name, host, server, nick, hg, star, at_plus, hopcount, realname = command.args
+
         handlers = {
             b"PING": ping,
+            b"JOIN": join,
+            b"PART": part,
+            b"QUIT": quit,
             b"004": rpl_myinfo,
+            b"352": rpl_whoreply,
         }
 
         if self._debug:
