@@ -3,7 +3,7 @@
 
 import socket
 from types import TracebackType
-from typing import Iterable, Optional, Type
+from typing import Iterable, Optional, Set, Type
 import command
 
 
@@ -13,6 +13,7 @@ class Bot:
     _socket: socket.SocketIO
     _server_name: Optional[bytes]
     _channel: Optional[bytes]
+    _users_on_channel: Set[bytes]
     _debug: bool
 
     def __init__(self, name: bytes, port: int, ipv6: bool = True, debug: bool = False) -> None:
@@ -30,27 +31,69 @@ class Bot:
     def __enter__(self) -> "Bot":
         return self
 
-    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], exc_traceback: Optional[TracebackType]):
-        self.quit("Leaving")
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_value: Optional[BaseException], exc_traceback: Optional[TracebackType]) -> Optional[bool]:
+        # Quitting can fail, both because we couldn't send the quit message and because we couldn't close the socket
+        # so we add some handling for that issue here.
+        # In particular, we just kinda up, because there's no reason to believe that it'll work if we try again
+        # but we do log the error
+        def try_quit(message: str):
+            try:
+                self.quit(message)
+            except OSError as e:
+                if self._debug:
+                    print("An OS error has occurred while trying to quit. The IRC connection may not have been "
+                          "terminated, and the socket may not have been closed\n"
+                          f"\tError: {e}")
+
+        if isinstance(exc_value, OSError):
+            if self._debug:
+                print(f"An OS Error has occurred. This bot will now shut down.\n"
+                      f"\tError: {exc_value}")
+            try_quit(
+                f"An error has occurred. {self._name.decode()} will now disconnect")
+            return True
+        else:
+            try_quit("Leaving")
+            return False
 
     def connect_to_server(self, server: bytes) -> None:
+        """
+        Establish a connection to the specified IRC server, sending the NICK and USER messages
+        """
         self._socket.connect((server, self._port))
         self._send(b"NICK %s" % self._name)
         self._send(b"USER %s 0 * :%s" % (self._name, self._name))
 
     def join_channel(self, channel: bytes) -> None:
-        self._channel = channel
+        """
+        Join the specified channel, sending an appropriate JOIN message
+        """
         self._send(b"JOIN #%s" % channel)
+        self._channel = channel
+        self._send(b"WHO #%s" % channel)
 
     def send_channel_message(self, message: str) -> None:
+        """
+        Send a public message to all users on the channel this bot is on
+        """
         self._send(b"PRIVMSG #%s :%r" % (self._channel, message))
 
     def receive_forever(self) -> None:
+        """
+        Enter an infinite loop of receiving commands and handling them
+        """
         buffer = b""
         while True:
             data = self._socket.recv(2 ** 10)
             buffer += data
             self._handle_command(buffer)
+
+    def quit(self, message: str) -> None:
+        """
+        Quit the server and close the socket
+        """
+        self._send(b"QUIT %r" % message)
+        self._socket.close()
 
     def _handle_command(self, buffer: bytes) -> None:
         commands = Bot._parse_command(buffer)
@@ -104,8 +147,3 @@ class Bot:
         if self._debug:
             channel = getattr(self, "_channel", b"{not on any channel}")
             print(f"out: #{channel.decode()}: {message.decode()}")
-
-    def quit(self, message: str) -> None:
-        message = f"QUIT {message}\r\n"
-        self._socket.sendall(message.encode())
-        self._socket.close()

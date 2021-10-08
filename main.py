@@ -3,7 +3,7 @@
 import bot
 import argparse
 
-DEFAULT_HOST = "::1"
+DEFAULT_HOST = "::1"  # TODO: change this to be the lab VM's IP
 DEFAULT_PORT = 6667
 DEFAULT_NAME = "microbot"
 DEFAULT_CHANNEL = "test"
@@ -23,9 +23,13 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-with bot.Bot(args.name.encode(), args.port, ipv6=args.ip_version == "ipv6", debug=args.debug) as b:
-    b.connect_to_server(args.host.encode())
-    b.join_channel(args.channel.encode())
-    b.send_channel_message(f"Hello, I am {args.name}. Try sending !hello or !slap on the channel, or "
-                           "sending me a private message.")
-    b.receive_forever()
+try:
+    with bot.Bot(args.name.encode(), args.port, ipv6=args.ip_version == "ipv6", debug=args.debug) as b:
+        b.connect_to_server(args.host.encode())
+        b.join_channel(args.channel.encode())
+        b.send_channel_message(f"Hello, I am {args.name}. Try sending !hello or !slap on the channel, or "
+                               "sending me a private message.")
+        b.receive_forever()
+except OSError as e:
+    print(f"creating the bot failed. This program will now exit.\n"
+          "\tError: {e}")
