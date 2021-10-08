@@ -1,4 +1,4 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 
 class Error(Exception):
@@ -16,11 +16,15 @@ class EmptyPrefixError(Error):
     pass
 
 
+class InvalidArgumentsError(Error):
+    "A valid command was given, but its arguments were invalid"
+
+
 class Command:
     "A single IRC command"
     prefix: Optional[bytes]
     command: bytes
-    args: Sequence[bytes]
+    args: Sequence[Optional[bytes]]
     _trailing: bool  # used by __str__
 
     def __init__(self, input: bytes) -> None:
@@ -51,8 +55,35 @@ class Command:
         except StopIteration:
             raise MissingCommandError
 
+        special_parsers = {
+            b"352": self._parse_whoreply_args  # RPL_WHOREPLY
+        }
+
+        self.prefix = prefix
+        self.command = command
         try:
-            args = next(parts)
+            self.args = special_parsers[command](next(parts))
+        except KeyError:
+            self.args = self._parse_most_args(next(parts))
+
+    def __str__(self) -> str:
+        prefix = f":{self.prefix.decode()}" if self.prefix else ""
+        out = f"{prefix} {self.command.decode()}"
+
+        for arg in self.args[:-1]:
+            if arg:
+                out += f" {arg.decode()}"
+        try:
+            last = self.args[-1]
+            if last:
+                decode = last.decode()
+                out += f" :{decode}" if self._trailing else f" {decode}"
+        except IndexError:
+            pass  # Apparently there were no arguments, so we don't have to worry about stringifying them
+        return out
+
+    def _parse_most_args(self, args: bytes) -> Sequence[Optional[bytes]]:
+        try:
             if args.startswith(b":"):
                 self._trailing = True
                 arguments = [args[1:]]
@@ -67,20 +98,40 @@ class Command:
                     pass
         except StopIteration:
             arguments = []
+        return arguments
 
-        self.prefix = prefix
-        self.command = command
-        self.args = arguments
+    # RPL_WHOREPLY is incompatible with the above parser, and in fact violates the IRC message format
+    # by having a : before something other than the last parameter (specifically, it's before the second to last)
+    # Also, it contains the hostname, which _could_ start with :, for example by being an ipv6 address starting with ::
+    # Because this is unacceptable, a more specialized parsing function is necessary
+    def _parse_whoreply_args(self, input: bytes) -> Sequence[Optional[bytes]]:
+        import parsers
+        from parsers import whitespace, one_of, optional, char, ParseError
 
-    def __str__(self) -> str:
-        prefix = f":{self.prefix.decode()}" if self.prefix else ""
-        out = f"{prefix} {self.command.decode()}"
+        def word(input: bytes) -> Tuple[bytes, bytes]:
+            word, rest = parsers.word(input)
+            _, rest = whitespace(rest)
+            return word, rest
 
-        for arg in self.args[:-1]:
-            out += f" {arg.decode()}"
         try:
-            last = self.args[-1]
-            out += f" :{last.decode()}" if self._trailing else f" {last.decode()}"
-        except IndexError:
-            pass  # Apparently there were no arguments, so we don't have to worry about stringifying them
-        return out
+            nick, rest = word(input)
+            _, rest = char(rest, b"#")
+            channel, rest = word(rest)
+            name, rest = word(rest)
+            host, rest = word(rest)
+            server, rest = word(rest)
+            nick, rest = word(rest)
+            hg, rest = one_of(rest, [b"H", b"G"])
+            star, rest = optional(rest, lambda x: char(x, b"*"))
+            at_plus, rest = optional(rest, lambda x: one_of(x, [b"@", b"+"]))
+            _, rest = whitespace(rest)
+            _, rest = char(rest, b":")
+            hopcount, rest = word(rest)
+            _, rest = whitespace(rest)
+            realname, rest = word(rest)
+            if rest:
+                raise InvalidArgumentsError
+        except ParseError:
+            raise InvalidArgumentsError
+        return [nick, channel, name, host, server, nick,
+                hg, star, at_plus, hopcount, realname]
