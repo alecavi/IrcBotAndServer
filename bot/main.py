@@ -3,7 +3,7 @@
 import bot
 import argparse
 
-DEFAULT_HOST = "::1"  # TODO: change this to be the lab VM's IP
+DEFAULT_HOST = "fc00:1337::17"
 DEFAULT_PORT = 6667
 DEFAULT_NAME = "microbot"
 DEFAULT_CHANNEL = "test"
