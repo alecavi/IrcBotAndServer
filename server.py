@@ -41,21 +41,22 @@ class Client:
 
 
     #Pings client, if client doesnt respond, diconnected and removed
-##    def ping(self, now) -> None:
-##        if self.lastPing + 300 == now:
-##            print("Disconnecting \n\r")
-##            self.disconnect(self)
-##        else:
-##            data = b"PING :%s" % self.host
-##            try:
-##                print(f"{data}")
-##                self.socket.send(data)
-##                data = self.socket.recv(1024)
-##                self.lastPing = time.time()
-##            except Exception as e:
-s##                print(f"Error: {e}")
-##                print(f"Disconnecting\n\r")
-##                self.disconnect()
+    def ping(self, now) -> None:
+        if self.lastPing + 300 == now:
+            print("Disconnecting \n\r")
+            self.disconnect(self)
+        else:
+            data = b"PING :%s" % self.host
+            try:
+                sent = self.socket.send(data)
+                if sent:
+                    self.lastPing = time.time()
+                else:
+                    self.disconnect()
+            except Exception as e:
+                print(f"Error: {e}")
+                print(f"Disconnecting\n\r")
+                self.disconnect()
 
     #Removed client object from server
     def disconnect(self) -> None:
@@ -98,17 +99,13 @@ s##                print(f"Error: {e}")
             self.nickname = args[0]
             self.setNickname(oldnickname)
             print(f"{self.writeBuffer}")
-            self.send_msg()
-
         if command == b"USER" and len(args) > 0:
             self.user = b"Guest"
             self.realname = args[0]
-
         if command == b"QUIT":
             msg = args[0]
             self.writeBuffer += b":%s!%s@%s QUIT %s \n\r" % (self.nickname, self.user, self.host, args[0])
-            self.send_msg()
-
+            self.send_msg()    
         if command == b"JOIN" and len(args) > 0:
             if not self.server.channels:
                 self.writeBuffer += b":%s!%s@%s JOIN %s \n\r" % (self.nickname, self.user, self.host, args[0])
@@ -116,15 +113,13 @@ s##                print(f"Error: {e}")
                 self.server.add_channel(channel)
                 self.channels.append(channel)
                 channel.add_member(self)
-                channel.join(args)
             else:
                 for channel in self.server.channels:
                     if channel.name == args[0]:
-                        self.writeBuffer += b":%s!%s@%s JOIN %s \n\r" % (self.nickname, self.user, self.host, args[0])
+                        for client in self.server.clients:
+                            self.writeBuffer += b":%s!%s@%s JOIN %s \n\r" % (client.nickname, client.user, client.host, args[0])
                         channel.add_member(self)
-                        self.channels.append(channel)
-                        channel.join(args)
-
+                        self.channels.append(channel)                 
         if command == b"PRIVMSG" and len(args) > 0:
             for channel in self.channels:
                 if channel.name == args[0]:
@@ -132,7 +127,6 @@ s##                print(f"Error: {e}")
             for client in self.server.clients:
                 if client.nickname == args[0] and client.nickname != self.nickname:
                     self.writeBuffer += b":%s!%s@%s PRIVMSG %s %s \n\r" % (self.nickname, self.user, self.host, args[0], args[1])
-
         if command == b"PART" and len(args) > 0:
             try:
                 for x in range(0, len(self.channels)):
@@ -160,7 +154,7 @@ s##                print(f"Error: {e}")
 
 class Server:
     def __init__(self) -> None:
-        self.host = b"Localhost"
+        self.host = b"fc00:1337::17"
         self.port = 6667
         self.clients = []
         self.channels = []
@@ -169,7 +163,7 @@ class Server:
     def start(self) -> None:
         s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         try:
-            s.bind(('localhost', 6667,))
+            s.bind((b'fc00:1337::17', 6667,))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
             s.settimeout(5)
         except socket.error as e:
@@ -198,9 +192,9 @@ class Server:
         except Exception as e:
             print(f"{e}")
 
-##        ping = threading.Thread(target=self.ping_clients)
-##        ping.start()
-##        threads.append(ping)
+        ping = threading.Thread(target=self.ping_clients)
+        ping.start()
+        threads.append(ping)
 
         try:
             send = threading.Thread(target=self.send_messages)
@@ -225,8 +219,7 @@ class Server:
             try:
                 conn, addr = s.accept()
                 self.clients.append(Client(self, conn))
-                print(f"{self.clients}")
-                print(f"Accepted connection from {addr[0]}:{addr[1]}.")
+                print(f"Accepted connection from {addr[0]}:{addr[1]}. \n\r")
                 conn = b""
                 addr = b""
             except Exception as e:
@@ -236,14 +229,14 @@ class Server:
                     pass
                 
     #Pings all clients within the server, will diconnect if they timeout       
-##    def ping_clients(self) -> None:
-##        last_ping = time.time()
-##        while True:
-##            now = time.time()
-##            if last_ping + 5 < now:
-##                for client in self.clients:
-##                    client.ping(now)
-##                last_ping = now
+    def ping_clients(self) -> None:
+        last_ping = time.time()
+        while True:
+            now = time.time()
+            if last_ping + 5 < now:
+                for client in self.clients:
+                    client.ping(now)
+                last_ping = now
 
     #Remove client details from server
     def remove_client(self, client: "Client") -> None:
